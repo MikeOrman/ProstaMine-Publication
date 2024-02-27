@@ -1,0 +1,343 @@
+---
+title: "Figure 1: Primary Alteration Landscape"
+output: html_document
+---
+# Import alteration profiles & compute alteration frequencies
+Load LOF/GOF alteration profiles
+```{r}
+GOF.data <- read.table("primary GOF.txt", sep = "\t", check.names = FALSE, header = TRUE)
+combined.GOF <- data.frame(rownames(GOF.data), GOF.data)
+colnames(combined.GOF)[1] <- "Hugo_Symbol"
+LOF.data <- read.table("primary LOF.txt", sep = "\t", check.names = FALSE, header = TRUE)
+combined.LOF <- data.frame(rownames(LOF.data), LOF.data)
+colnames(combined.LOF)[1] <- "Hugo_Symbol"
+combined.alteration <- data.frame(rownames(combined.LOF))
+colnames(combined.alteration) <- "Hugo Symbol"
+combined.alteration[,2:ncol(combined.GOF)] <- (combined.LOF[,2:ncol(combined.LOF)] +
+                                                 combined.GOF[,2:ncol(combined.GOF)])
+```
+Compute Alteration frequency
+```{r}
+source("alteration rank.R")
+combined.LOF.alteration.rates <- alterationRank(combined.LOF)
+combined.GOF.alteration.rates <- alterationRank(combined.GOF)
+```
+# Coverage Analysis
+Specify alteration ratio cutoffs to test
+```{r}
+frequencies <- c(0, 0.05, 0.1, 0.15, 0.2, 0.25, 0.3, 0.35, 0.4, 0.45, 0.5, 0.6, 0.7, 0.8, 0.9, 1)
+```
+Test coverage over cutoffs
+```{r}
+source("annotate.R")
+cutoff.table <- data.frame()
+LOF.alterations <- annotate(combined.LOF.alteration.rates[,c(1,5)])
+GOF.alterations <- annotate(combined.GOF.alteration.rates[,c(1,5)])
+colnames(LOF.alterations)[2] <- "Alteration freq"
+colnames(GOF.alterations)[2] <- "Alteration freq"
+combined.list <- list()
+# Iterate through vector of alteration frequencies. For each frequency, set as a cutoff and determine:
+# (1) Number of genes altered at/above cutoff
+# (2) Number of patients harboring alteration at/above cutoff
+# (3) Number of cytogenetic bands covered by alterations at/above cutoff
+# (4) Number of chromosomes covered by alterations at/above cutoff.
+for (i in 1:length(frequencies)){
+  LOF.threshold = (LOF.alterations$`Alteration freq` >= frequencies[i])
+  LOF.genes <- LOF.alterations[LOF.threshold,]
+  GOF.threshold = (GOF.alterations$`Alteration freq` >= frequencies[i])
+  GOF.genes <- GOF.alterations[GOF.threshold,]
+  genes <- rbind(LOF.genes, GOF.genes)
+  genes <- genes[duplicated(genes$Hugo_Symbol)==FALSE,]
+  # Compute coverage when alteration rate cutoff captures LOF and GOF alterations
+  if (nrow(LOF.genes) > 0 & nrow(GOF.genes) > 0){
+    # Remove genes that do not meet the cutoff (j loop), and then subset patients having 
+    # loss of at least one gene meeting the cutoff (k loop)
+    CNA <- data.frame()
+    for (j in 1:nrow(genes)){
+      print(i)
+      print(j)
+      index <- match(genes[j,1], combined.alteration[,1])[1]
+      CNA[j,1:ncol(combined.alteration)] <- combined.alteration[index,]
+    }
+    x <- c(TRUE)
+    for (k in 2:ncol(CNA)){
+      # Calculate patients covered at i = 0 (0% alteration ferquency)
+      if (frequencies[i] == 0){
+        patient.CNA.profile <- CNA[k]
+        patient.CNA.profile <- na.omit(patient.CNA.profile)
+        if (sum((patient.CNA.profile <= 0)) > 0) 
+        {x[k] = TRUE} else {x[k] = FALSE}
+      }
+      # Calculate patients covered at all other i values (>0% alteration frequency)
+      else{
+        patient.CNA.profile <- CNA[k]
+        patient.CNA.profile <- na.omit(patient.CNA.profile)
+        if (sum((patient.CNA.profile > 0)) > 0) 
+        {x[k] = TRUE} else {x[k] = FALSE}
+      }
+    }
+    subset <- CNA[,x]
+    cutoff.table[i,1] <- frequencies[i]
+    cutoff.table[i,2] <- (ncol(subset) - 1)/(ncol(combined.alteration)-1)
+    cutoff.table[i,3] <- nrow(genes)
+    combined.list[[i]] <- genes$Hugo_Symbol
+    names(combined.list)[i] <- paste(frequencies[i]*100, "% alteration frequency", sep = " ")
+  }
+  # Compute coverage when alteration rate cutoff captures only LOF alterations
+  if (nrow(LOF.genes) > 0 & nrow(GOF.genes) == 0){
+    # Remove genes that do not meet the cutoff (j loop), and then subset patients having 
+    # loss of at least one gene meeting the cutoff (k loop)
+    CNA <- data.frame()
+    for (j in 1:nrow(LOF.genes)){
+      print(i)
+      print(j)
+      index <- match(LOF.genes[j,1], combined.LOF[,1])[1]
+      CNA[j,1:ncol(combined.LOF)] <- combined.LOF[index,]
+    }
+    x <- c(TRUE)
+    for (k in 2:ncol(CNA)){
+      # Calculate patients covered at i = 0 (0% alteration ferquency)
+      if (frequencies[i] == 0){
+        patient.CNA.profile <- CNA[k]
+        patient.CNA.profile <- na.omit(patient.CNA.profile)
+        if (sum((patient.CNA.profile <= 0)) > 0) 
+        {x[k] = TRUE} else {x[k] = FALSE}
+      }
+      # Calculate patients covered at all other i values (>0% alteration frequency)
+      else{
+        patient.CNA.profile <- CNA[k]
+        patient.CNA.profile <- na.omit(patient.CNA.profile)
+        if (sum((patient.CNA.profile > 0)) > 0) 
+        {x[k] = TRUE} else {x[k] = FALSE}
+      }
+    }
+    subset <- CNA[,x]
+    cutoff.table[i,1] <- frequencies[i]
+    cutoff.table[i,2] <- (ncol(subset) - 1)/(ncol(combined.alteration)-1)
+    cutoff.table[i,3] <- nrow(genes)
+    combined.list[[i]] <- LOF.genes$Hugo_Symbol
+    names(combined.list)[i] <- paste(frequencies[i]*100, "% alteration frequency", sep = " ")
+  }
+  # Compute coverage when alteration rate cutoff captures only GOF alterations
+  if (nrow(LOF.genes) == 0 & nrow(GOF.genes) > 0){
+    # Remove genes that do not meet the cutoff (j loop), and then subset patients having 
+    # loss of at least one gene meeting the cutoff (k loop)
+    CNA <- data.frame()
+    for (j in 1:nrow(GOF.genes)){
+      index <- match(GOF.genes[j,1], combined.GOF[,1])[1]
+      CNA[j,1:ncol(combined.GOF)] <- combined.GOF[index,]
+    }
+    x <- c(TRUE)
+    for (k in 2:ncol(CNA)){
+      # Calculate patients covered at i = 0 (0% alteration ferquency)
+      if (frequencies[i] == 0){
+        patient.CNA.profile <- CNA[k]
+        patient.CNA.profile <- na.omit(patient.CNA.profile)
+        if (sum((patient.CNA.profile <= 0)) > 0) 
+        {x[k] = TRUE} else {x[k] = FALSE}
+      }
+      # Calculate patients covered at all other i values (>0% alteration frequency)
+      else{
+        patient.CNA.profile <- CNA[k]
+        patient.CNA.profile <- na.omit(patient.CNA.profile)
+        if (sum((patient.CNA.profile > 0)) > 0) 
+        {x[k] = TRUE} else {x[k] = FALSE}
+      }
+    }
+    subset <- CNA[,x]
+    cutoff.table[i,1] <- frequencies[i]
+    cutoff.table[i,2] <- (ncol(subset) - 1)/(ncol(combined.alteration)-1)
+    cutoff.table[i,3] <- nrow(GOF.genes)
+    combined.list[[i]] <- GOF.genes$Hugo_Symbol
+    names(combined.list)[i] <- paste(frequencies[i]*100, "% alteration frequency", sep = " ")
+  }
+  # Compute coverage when alteration rate cutoff does not capture any alterations
+  if (nrow(LOF.genes) == 0 & nrow(GOF.genes) == 0){
+    print(i)
+    print(j)
+    cutoff.table[i,1] <- frequencies[i]
+    cutoff.table[i,c(2:5)] <- 0
+    combined.list[[i]] <- NA
+    names(combined.list)[i] <- paste(frequencies[i]*100, "% alteration frequency", sep = " ")
+  }
+}
+colnames(cutoff.table) <- c("Alteration rate cutoff",
+                            "Ratio tumors covered",
+                            "Genes covered")
+cutoff.table <- cutoff.table[order(cutoff.table$`Alteration rate cutoff`, decreasing = FALSE),]
+combined.cutoff.table <- cutoff.table
+```
+Coverage Analysis Summary
+```{r}
+library(DT)
+datatable(combined.cutoff.table)
+library(ggplot2)
+ggplot(combined.cutoff.table, aes(x=`Alteration rate cutoff`)) + geom_line(aes(y=`Ratio tumors covered`, color = "Ratio tumors covered")) + geom_line(aes(y=`Genes covered`/15801, color = "Genes covered")) + scale_y_continuous(sec.axis = sec_axis(~.*15801, name="Genes covered")) + scale_color_manual("", values = c("Purple3", "Green3")) + theme(text = element_text(size=16)) + theme(legend.position = "top") + theme_classic()
+```
+# Core PCa genes
+An alteration rate of 10% captures 93% of patients in the meta-analysis. These patients are captured by alteration of at least 1 of 3378 core PCa genes. Genes are located at the following loci:
+```{r}
+library(dplyr)
+library(karyoploteR)
+library(DT)
+source("manhattan.R")
+source("annotate.R")
+LOF.alterations <- annotate(combined.LOF.alteration.rates[,c(1,5)])
+GOF.alterations <- annotate(combined.GOF.alteration.rates[,c(1,5)])
+colnames(LOF.alterations)[2] <- "Alteration freq"
+colnames(GOF.alterations)[2] <- "Alteration freq"
+cutoff <- 0.10
+core.genes <- c(LOF.alterations$Hugo_Symbol[LOF.alterations$`Alteration freq` >= cutoff],
+                GOF.alterations$Hugo_Symbol[GOF.alterations$`Alteration freq` >= cutoff])
+core.genes <- core.genes[duplicated(core.genes==FALSE)]
+core.genes <- data.frame(core.genes)
+core.genes[,2] <- 1
+# Gene table
+LOF.genes <- LOF.alterations[LOF.alterations$`Alteration freq` >= cutoff,c(1,2,4,7)]
+LOF.genes$`Alteration` <- "LOF"
+GOF.genes <- GOF.alterations[GOF.alterations$`Alteration freq` >= cutoff,c(1,2,4,7)]
+GOF.genes$`Alteration` <- "GOF"
+core.genes <- rbind(LOF.genes, GOF.genes)
+core.genes <- core.genes[duplicated(core.genes$Hugo_Symbol == FALSE),]
+core.genes <- core.genes[order(core.genes$`Alteration freq`, decreasing = TRUE),]
+datatable(core.genes)
+write.table(core.genes$Hugo_Symbol, file = "core genes.txt", sep = "\n", 
+            row.names = FALSE, col.names = FALSE, quote = FALSE)
+```
+
+# Create manhattan objects for alteration landscape
+Create manhattan objects
+```{r}
+combined.LOF.gr <- manhattan.object(combined.LOF.alteration.rates[,c(1,5)])
+combined.GOF.gr <- manhattan.object(combined.GOF.alteration.rates[,c(1,5)])
+```
+# Observe genes in cytogenetic hotspots
+Assign core alterations to cytogenetic location and create list for mapping
+```{r}
+# LOF.alterations$substring <- substr(LOF.alterations$Band, 1, 5)
+# GOF.alterations$substring <- substr(GOF.alterations$Band, 1, 5)
+# # 2q14 - 2q22
+# a <- na.omit(LOF.alterations[LOF.alterations$substring == "2q14." | LOF.alterations$substring == "2q21." | LOF.alterations$substring == "2q22.", c(1,2,5)])
+# a$`Cytogenetic Hotspot` <- c("2q14-2q22")
+# # 3p13
+# b <- na.omit(LOF.alterations[LOF.alterations$substring == "3p13", c(1,2,5)])
+# b$`Cytogenetic Hotspot` <- c("3p13")
+# # 5q11 - 5q13
+# c <- na.omit(LOF.alterations[LOF.alterations$substring == "5q11." | LOF.alterations$substring == "5q12." | LOF.alterations$substring == "5q13.", c(1,2,5)])
+# c$`Cytogenetic Hotspot` <- c("5q11-5q13")
+# # 5q14 - 5q21
+# d <- na.omit(LOF.alterations[LOF.alterations$substring == "5q14." | LOF.alterations$substring == "5q15" | LOF.alterations$substring == "5q21." | LOF.alterations$substring == "5q15-", c(1,2,5)])
+# d$`Cytogenetic Hotspot` <- c("5q14-5q21")
+# # 6q13 - 6q22
+# e <- na.omit(LOF.alterations[LOF.alterations$substring == "6q13" | LOF.alterations$substring == "6q14." | LOF.alterations$substring == "6q15" | LOF.alterations$substring == "6q16." | LOF.alterations$substring == "6q21" | LOF.alterations$substring == "6q22." | LOF.alterations$substring == "6q21-" | LOF.alterations$substring == "6q13-", c(1,2,5)])
+# e$`Cytogenetic Hotspot` <- c("6q13-6q22")
+# # Chr 7
+# f <- na.omit(GOF.alterations[GOF.alterations$Chr==7, c(1,2,5)])
+# f$`Cytogenetic Hotspot` <- c("Chromosome 7")
+# # 8p11 - 8p23
+# g <- na.omit(LOF.alterations[LOF.alterations$substring == "8p11." | LOF.alterations$substring == "8p12" | GOF.alterations$substring == "8p21." | LOF.alterations$substring == "8p21." | LOF.alterations$substring == "8p22" | LOF.alterations$substring == "8p23.", c(1,2,5)])
+# g$`Cytogenetic Hotspot` <- c("8p11-8p23")
+# # 8q11 - 8q23
+# h <- na.omit(GOF.alterations[GOF.alterations$substring == "8q11." | GOF.alterations$substring == "8q12." | GOF.alterations$substring == "8q13." | GOF.alterations$substring == "8q21." | GOF.alterations$substring == "8q22." | GOF.alterations$substring == "8q23." | GOF.alterations$substring == "8q24.", c(1,2,5)])
+# h$`Cytogenetic Hotspot` <- c("8q11-8q23")
+# # 10q23-10q24
+# i <- na.omit(LOF.alterations[LOF.alterations$substring == "10q23" | GOF.alterations$substring == "10q24", c(1,2,5)])
+# i$`Cytogenetic Hotspot` <- c("10q23-10q24")
+# # 12p12 - 12p13
+# j <- na.omit(LOF.alterations[LOF.alterations$substring == "12p12" | LOF.alterations$substring == "12p13", c(1,2,5)])
+# j$`Cytogenetic Hotspot` <- c("12p12-12p13")
+# # 13q12 - 13q32
+# k <- na.omit(LOF.alterations[LOF.alterations$substring == "13q12" | LOF.alterations$substring == "13q13" | LOF.alterations$substring == "13q14" | LOF.alterations$substring == "13q21" | LOF.alterations$substring == "13q22" | LOF.alterations$substring == "13q31" | LOF.alterations$substring == "13q32" | LOF.alterations$substring == "13q33", c(1,2,5)])
+# k$`Cytogenetic Hotspot` <- c("13q12-13q32")
+# # 16q12 - 16q24
+# l <- na.omit(LOF.alterations[LOF.alterations$substring == "16q12" | LOF.alterations$substring == "16q13" | LOF.alterations$substring == "16q21" | LOF.alterations$substring == "16q22" | LOF.alterations$substring == "16q23" | LOF.alterations$substring == "16q24", c(1,2,5)])
+# l$`Cytogenetic Hotspot` <- c("16q12-16q24")
+# # 17p12 - 17p13
+# m <- na.omit(LOF.alterations[LOF.alterations$substring == "17p12" | LOF.alterations$substring == "17p13", c(1,2,5)])
+# m$`Cytogenetic Hotspot` <- c("17p12-17p13")
+# # 17q21
+# n <- na.omit(LOF.alterations[LOF.alterations$substring == "17q21", c(1,2,5)])
+# n$`Cytogenetic Hotspot` <- c("17q21")
+# # 18q11 - 18q23
+# o <- na.omit(LOF.alterations[LOF.alterations$substring == "18q11" | LOF.alterations$substring == "18q12" | LOF.alterations$substring == "18q21" | LOF.alterations$substring == "18q22" | LOF.alterations$substring == "18q23", c(1,2,5)])
+# o$`Cytogenetic Hotspot` <- c("18q11-18q23")
+# # 21q22
+# p <- na.omit(LOF.alterations[LOF.alterations$substring == "21q22", c(1,2,5)])
+# p$`Cytogenetic Hotspot` <- c("21q22")
+# # Create data frame for plotting
+# dotplots <- bind_rows(a, b, c, d, e, f, g, h, i, j, k, l, m, n, o, p)
+```
+# Figure 1 plots to PDF
+Coverage analysis
+```{r}
+pdf("Figure 1: Coverage Analysis.pdf", height = 7, width = 7)
+ggplot(combined.cutoff.table, aes(x=`Alteration rate cutoff`)) + geom_line(aes(y=`Ratio tumors covered`, color = "Ratio tumors covered")) + geom_line(aes(y=`Genes covered`/15801, color = "Genes covered")) + scale_y_continuous(sec.axis = sec_axis(~.*15801, name="Genes covered")) + scale_color_manual("", values = c("Purple3", "Green3")) + xlab("Gene alteration rate") + theme_classic() + theme(text=element_text(size=24), legend.position = "top", axis.title.y.left = element_text(margin=margin(t=0, b=0, r=15, l=0)), axis.title.y.right = element_text(margin=margin(t=0, b=0, r=0, l=15)), axis.title.x = element_text(margin=margin(r=0, l=0, b=0, t=15)))
+dev.off()
+```
+Alteration hotspots
+```{r}
+canonical.GOF.alterations <- c("PIK3CA", "ETV1", "MYC")
+canonical.LOF.alterations <- c("LRP1B", "SHQ1", "CHD1", "MAP3K7", "NKX3-1", "PTEN", "CDKN1B", "RB1", "USP10", "TP53", "HDAC5", "BCL2", "ERG", "PPARA")
+GOF.core <- core.genes[core.genes$Alteration == "GOF",]
+LOF.core <- core.genes[core.genes$Alteration == "LOF",]
+mp.GOF <- manhattan.object(GOF.core[,c(1,2)])
+mp.GOF$value <- 0
+mp.LOF <- manhattan.object(LOF.core[,c(1,2)])
+mp.LOF$value <- 0
+pdf("Figure 1: Alteration Hotspots.pdf", height = 7, width = 7)
+kp <- plotKaryotype(plot.type = 2, cex = 1.3, chromosomes = "autosomal")
+index <- match(canonical.GOF.alterations, mp.GOF@ranges@NAMES)
+kpPoints(kp, mp.GOF, col = "Orange", cex = 1)
+kpPlotMarkers(kp, chr = as.character(mp.GOF@seqnames)[index], x = mp.GOF@ranges@start[index],
+              labels = names(mp.GOF)[index], text.orientation = "horizontal", marker.parts = c(.8,.1,.1))
+legend(x=0.45,y=0.3, legend = c("Gain in at least\n10% of tumors"), 
+       box.col = "white", col = "Orange", pch = 20, pt.cex = 2, cex = 1.3)
+kpPoints(kp, mp.LOF, col = "Navy", cex = 1)
+index <- match(canonical.LOF.alterations, mp.LOF@ranges@NAMES)
+legend(x=0.45,y=0.15, legend = c("Loss in at least\n10% of tumors"), 
+       box.col = "white", col = "Navy", pch = 20, pt.cex = 2, cex = 1.3)
+kpPlotMarkers(kp, chr = as.character(mp.LOF@seqnames)[index], x = mp.LOF@ranges@start[index],
+              labels = names(mp.LOF)[index], text.orientation = "horizontal", marker.parts = c(.8,.1,.1))
+dev.off()
+```
+Alteration Landscape
+```{r}
+pdf("Figure 1: Alteration Landscape.pdf", width = 14)
+params <- getDefaultPlotParams(plot.type = 4)
+params$leftmargin = 0.15
+params$topmargin = 20
+params$bottommargin = 30
+kp <- plotKaryotype(genome = "hg38", plot.type=4, cex = 1, labels.plotter = NULL, plot.params = params,
+                    chromosomes = "autosomal")
+kpAddChromosomeNames(kp, srt = 90, cex = 1.3, yoffset = 0)
+# Plot Gain of function
+kp <- kpPlotHorizon(kp, combined.GOF.gr, r0=0.5, r1=1, ymax=1, ymin = 0, num.parts = 1, col=c("white", "orange"))
+kpAxis(kp, ymin=0, ymax=1, r0=0.5, r1=1, tick.pos = c(0, 0.25, 0.5, 0.75, 1), cex=1.5)
+kpAddLabels(kp, labels = "Primary Tumor Alteration Rate", srt=90, pos=1, r0=0, r1=1, cex=1.5, label.margin = 0.11)
+# Label canonical GOF PCa alterations
+index <- c()
+for (i in 1:length(combined.GOF.gr)){
+  index[i] <- combined.GOF.gr@ranges@NAMES[i] %in% canonical.GOF.alterations
+}
+GOF.labels <- combined.GOF.gr[index]
+GOF.labels$y <- GOF.labels$value
+kpSegments(kp, GOF.labels, y0=GOF.labels$y+.012, y1=GOF.labels$y+.165, col="grey", r0=0.5, r1=1, lwd = 1.2)
+kpPoints(kp, GOF.labels, pch=16, cex=0.5, col="red", lwd=1, y = GOF.labels$y, r0=0.5, r1=1)
+kpText(kp, labels = names(GOF.labels), cex=1.2, col="black", chr = GOF.labels@seqnames, x = GOF.labels@ranges@start, y = GOF.labels$y+.2, r0=0.5, r1=1)
+# Plot Loss of function
+kp <- kpPlotHorizon(kp, combined.LOF.gr, r0=0.5, r1=0, ymax=1, ymin = 0, num.parts = 1, col = c("white", "navy"))
+kpAxis(kp, ymin=0, ymax=1, r0=0.5, r1=0, tick.pos = c(0.25, 0.5, 0.75, 1), cex=1.5)
+kpAddMainTitle(kp)
+legend(x = 0.75, y = 1.05, fill = c("orange", "navy"), legend = c("CNA > 0", "CNA < 0\nPredicted LOF Mutation"), box.col = "white", cex = 1.3)
+# Label canonical LOF PCa alterations
+index <- c()
+for (i in 1:length(combined.LOF.gr)){
+  index[i] <- combined.LOF.gr@ranges@NAMES[i] %in% canonical.LOF.alterations
+}
+LOF.labels <- combined.LOF.gr[index]
+LOF.labels$y <- LOF.labels$value
+kpSegments(kp, LOF.labels, y0=LOF.labels$y+.012, y1=LOF.labels$y+.165, col="grey", r0=0.5, r1=0, lwd = 1.2)
+kpPoints(kp, LOF.labels, pch=16, cex=0.5, col="red", lwd=1, y = LOF.labels$y, r0=0.5, r1=0)
+kpText(kp, labels = names(LOF.labels), cex=1.2, col="black", chr = LOF.labels@seqnames, x = LOF.labels@ranges@start, y = LOF.labels$y+.2, r0=0.5, r1=0)
+dev.off()
+```

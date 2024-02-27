@@ -1,0 +1,821 @@
+---
+title: "Figure 2"
+output: html_document
+---
+## Consensus clustering
+Generate alteration matrix with canonical drivers as features
+```{r}
+combined.alterations <- read.table("primary alteration.txt", sep = "\t", check.names = FALSE, header = TRUE)
+canonical.drivers <- c("PIK3CA", "ETV1", "MYC", "LRP1B", "SHQ1", "CHD1", "MAP3K7", "NKX3-1", "PTEN", "CDKN1B", "RB1", "USP10", "TP53", "HDAC5", "BCL2", "ERG", "PPARA")
+index <- match(canonical.drivers, rownames(combined.alterations))
+driver.alterations <- combined.alterations[index,]
+```
+Compute coverage
+```{r}
+altered <- 0
+unaltered <- 0
+for (i in 2:ncol(driver.alterations)){
+  if(sum(driver.alterations[,i]) > 0) {altered <- altered + 1}
+  if(sum(driver.alterations[,i]) == 0) {unaltered <- unaltered + 1}
+}
+paste("Fraction altered is", round(altered/(altered+unaltered), 2))
+paste("Fraction unaltered is", round(unaltered/(altered+unaltered), 2))
+```
+Format matrix and Compute consensus clustering
+```{r}
+library(ConsensusClusterPlus)
+input <- driver.alterations
+rownames(input) <- rownames(driver.alterations)
+input <- input[,-1]
+input <- as.matrix(input)
+input[input > 0] <- 1
+CCP = ConsensusClusterPlus(input,maxK=6,reps=2000,pItem=1,pFeature=1,clusterAlg="km",distance="euclidean")
+```
+Load clinical data
+```{r}
+# Get Data
+Taylor.mae <- getPCa("taylor")
+Barbieri.mae <- getPCa("barbieri")
+Baca.mae <- getPCa("baca")
+Hieronymus.mae <- getPCa("hieronymus")
+TCGA.mae <- getPCa("tcga")
+# Read clinical data
+Taylor.clinical <- Taylor.mae@colData
+Barbieri.clinical <- Barbieri.mae@colData
+Baca.clinical <- Baca.mae@colData
+Hieronymus.clinical <- Hieronymus.mae@colData
+TCGA.clinical <- TCGA.mae@colData
+```
+## Data frame for plotting
+```{r}
+# Get CCP k=4 results and order dataframe by groups
+k <- 4
+k <- CCP[k]
+consensus.class <- k[[1]]$consensusClass
+index1 <- (consensus.class==2)
+index2 <- (consensus.class==4)
+consensus.class[index1] <- 4
+consensus.class[index2] <- 2
+consensus.class <- consensus.class[order(consensus.class)]
+alterations.grouped <- input
+alterations.grouped <- alterations.grouped[,match(names(consensus.class), colnames(alterations.grouped))]
+G1.count <- sum(consensus.class==1)
+G2.count <- sum(consensus.class==2)
+G3.count <- sum(consensus.class==3)
+G4.count <- sum(consensus.class==4)
+G1.start <- 1
+G1.end <- G1.count
+G2.start <- G1.end + 1
+G2.end <- G1.end + G2.count
+G3.start <- G2.end + 1
+G3.end <- G2.end + G3.count
+G4.start <- G3.end + 1
+G4.end <- G3.end + G4.count
+Group1 <- colnames(alterations.grouped)[G1.start:G1.end]
+Group2 <- colnames(alterations.grouped)[G2.start:G2.end]
+Group3 <- colnames(alterations.grouped)[G3.start:G3.end]
+Group4 <- colnames(alterations.grouped)[G4.start:G4.end]
+Group1.alterations <- alterations.grouped[,G1.start:G1.end]
+Group2.alterations <- alterations.grouped[,G2.start:G2.end]
+Group3.alterations <- alterations.grouped[,G3.start:G3.end]
+Group4.alterations <- alterations.grouped[,G4.start:G4.end]
+```
+## PCa17 Alteration Analysis
+Alteration Rates by Group
+```{r}
+library(scales)
+gene.order <- c("NKX3-1", "RB1", "MAP3K7", "ERG", "SHQ1", "HDAC5", "ETV1", "CDKN1B", "PIK3CA", "PTEN", "TP53", "MYC",  "USP10", "CHD1", "LRP1B", "PPARA", "BCL2")
+pdf("Figure 2: Alterations by group.pdf", height = 4.5, width = 12)
+# Function for plotting
+alteration_rates_by_group <- function(input){
+  alteration.rate <- c()
+  gene <- c()
+  for (i in 1:nrow(input)) {
+    symbol <- rownames(input)[i]
+    gene <- append(gene, symbol)
+    freq <- sum(input[i,]) / ncol(input)
+    alteration.rate <- append(alteration.rate, freq)
+  }
+  output <- data.frame(gene, alteration.rate)
+  colnames(output) <- c("Hugo Symbol", "Alteration Rate")
+  return(output)
+}
+# Group 1 data frame
+Group1.df <- alteration_rates_by_group(Group1.alterations)
+Group1.df$`Group` <- "Group 1"
+# Group 2 data frame
+Group2.df <- alteration_rates_by_group(Group2.alterations)
+Group2.df$`Group` <- "Group 2"
+# Group 3 data frame
+Group3.df <- alteration_rates_by_group(Group3.alterations)
+Group3.df$`Group` <- "Group 3"
+# Group 4 data frame
+Group4.df <- alteration_rates_by_group(Group4.alterations)
+Group4.df$`Group` <- "Group 4"
+# Combine data frames for plotting
+group.alteration.df <- rbind(Group1.df, Group2.df)
+group.alteration.df <- rbind(group.alteration.df, Group3.df)
+group.alteration.df <- rbind(group.alteration.df, Group4.df)
+group.alteration.df <- na.omit(group.alteration.df)
+group.alteration.df$`Alteration Rate Percent` <- percent(group.alteration.df$`Alteration Rate`, accuracy = 1)
+group.alteration.df$`Hugo Symbol` <- factor(group.alteration.df$`Hugo Symbol`, levels = gene.order)
+# Make barplots
+ggplot(group.alteration.df, aes(`Hugo Symbol`, `Alteration Rate`, fill = `Group`)) + geom_col(position = "dodge", color = "black", size = 0.1) + scale_fill_manual(values = c("blue", "red", "green", "orange")) + 
+
+geom_text(aes(label = group.alteration.df$`Alteration Rate Percent`), position = position_dodge(0.5), color = "gray10", size = 5, vjust = -0.1) +
+
+xlab(NULL) + theme_bw() + ylab("Alteration Rate") + theme(legend.title = element_blank(), axis.title.y = element_text(size=20), axis.text.x = element_text(size = 20, angle = 45, vjust = 0.675), axis.text.y = element_text(size=20), strip.text = element_text(size=20), legend.text = element_text(size=20), legend.key.size = unit(1, "cm"))
+dev.off()
+alteration.rates <- group.alteration.df
+```
+Total alterations by group
+```{r}
+pdf("Figure 2: Ratio total alterations by group.pdf", height = 4.5, width = 12)
+# Function for plotting
+alteration_counts_by_group <- function(input){
+  alteration.count <- c()
+  gene <- c()
+  for (i in 1:nrow(input)) {
+    symbol <- rownames(input)[i]
+    gene <- append(gene, symbol)
+    count <- sum(input[i,])
+    alteration.count <- append(alteration.count, count)
+  }
+  output <- data.frame(gene, alteration.count)
+  colnames(output) <- c("Hugo Symbol", "Alteration Count")
+  return(output)
+}
+# Group 1 data frame
+Group1.df <- alteration_counts_by_group(Group1.alterations)
+Group1.df$`Group` <- "Group 1"
+# Group 2 data frame
+Group2.df <- alteration_counts_by_group(Group2.alterations)
+Group2.df$`Group` <- "Group 2"
+# Group 3 data frame
+Group3.df <- alteration_counts_by_group(Group3.alterations)
+Group3.df$`Group` <- "Group 3"
+# Group 4 data frame
+Group4.df <- alteration_counts_by_group(Group4.alterations)
+Group4.df$`Group` <- "Group 4"
+# Combine data frames for plotting
+group.alteration.df <- rbind(Group1.df, Group2.df)
+group.alteration.df <- rbind(group.alteration.df, Group3.df)
+group.alteration.df <- rbind(group.alteration.df, Group4.df)
+group.alteration.df <- na.omit(group.alteration.df)
+# Add ratio of total alterations to each gene in a group
+ratios <- c()
+for (i in 1:nrow(group.alteration.df)){
+  count <- group.alteration.df$`Alteration Count`[i]
+  index <- group.alteration.df$`Hugo Symbol`[i] == group.alteration.df$`Hugo Symbol`
+  total <- sum(group.alteration.df$`Alteration Count`[index])
+  ratio <- count / total
+  ratios <- append(ratios, ratio)
+}
+group.alteration.df$'Ratio Total Alterations' <- ratios
+group.alteration.df$'Percentage' <- percent(ratios, accuracy = 1)
+# Create factors for plotting
+group.alteration.df$`Hugo Symbol` <- factor(group.alteration.df$`Hugo Symbol`, levels = gene.order)
+# Make barplots
+ggplot(group.alteration.df, aes(`Hugo Symbol`, `Ratio Total Alterations`, fill = Group)) + geom_col(position = "fill", color = "black", size = 0.1) + scale_fill_manual(values = c("blue", "red", "green", "orange")) +
+
+geom_text(aes(label = group.alteration.df$Percentage), position = position_fill(0.5), color = "gray10", size = 5) + 
+
+xlab(NULL) + theme_bw() + ylab("Ratio Total Alterations") + theme(legend.title = element_blank(), axis.title.y = element_text(size=20), axis.text.x = element_text(size = 20, angle = 45, vjust = 0.675), axis.text.y = element_text(size=20), strip.text = element_text(size=20), legend.text = element_text(size=20), legend.key.size = unit(1, "cm"))
+dev.off()
+```
+Mutual Exclusivity
+```{r}
+par(mar=c(0,0,0,0))
+library(ComplexHeatmap)
+library(circlize)
+source("odds_ratio.R")
+pdf("Figure 2: ME.pdf", height=7, width = 7, family = "Helvetica")
+ME.grouped <- alterations.grouped
+ME.grouped <- ME.grouped[match(c("MAP3K7", "ERG", "SHQ1", "HDAC5", "PTEN", "TP53", "CHD1", "LRP1B"), rownames(ME.grouped)),]
+# Compute OR and Fisher's Test FDR
+OR.hm <- odds_ratio(ME.grouped)
+FDRs.ME <- FDR_ME(ME.grouped)
+# Format Matrices for plotting
+tri <- lower.tri(OR.hm, diag = FALSE)
+OR.hm[tri] <- NA
+diag(OR.hm) <- NA
+OR.hm <- log2(OR.hm)
+OR.hm <- round(OR.hm, 2)
+OR.hm <- OR.hm[nrow(OR.hm):1,]
+tri <- lower.tri(FDRs.ME, diag = FALSE)
+FDRs.ME[lower.tri(FDRs.ME, diag = TRUE)] <- NA
+FDRs.ME <- FDRs.ME[nrow(FDRs.ME):1,]
+# Plot
+col_fun = colorRamp2(c(-3, 0, 3), c("blue", "white", "red"))
+Heatmap(OR.hm, cluster_rows = FALSE, cluster_columns = FALSE, col = col_fun, na_col = "white", show_heatmap_legend = FALSE, row_names_gp = gpar(fontsize = 20), column_names_gp = gpar(fontsize = 20), column_title = "All Patients",
+cell_fun = function(j, i, x, y, width, height, fill) {
+  if ((is.na(FDRs.ME[i, j]) == FALSE) & (FDRs.ME[i, j] <= 1e-3)) {
+    grid.points(x = x, y = y, pch = 8, size = unit(5, "mm"))
+    grid.rect(x = x, y = y, width = width, height = height, gp = gpar(col = "black", lwd = 1))}
+  if ((is.na(FDRs.ME[i, j]) == FALSE) & (FDRs.ME[i,j] > 1e-3)) {
+    grid.rect(x = x, y = y, width = width, height = height, gp = gpar(col = "black", lwd = 1))}})
+lgd <- Legend(col_fun = col_fun, title = "-3 Log2(Odds Ratio) 3", title_position = "topcenter", direction = "horizontal", legend_width = unit(6, "cm"), at = c(-3, 3),
+              labels = gt_render(c("Mutually Exclusive", "Co-occurring")), legend_gp = gpar(cex=2), 
+              title_gp = gpar(fontsize = 15), grid_height = unit(6, "mm"), 
+              grid_width = unit(6, "mm"), labels_gp = gpar(fontsize = 15), border = TRUE)
+draw(lgd, x = unit(2.5, "cm"), y = unit(16, "cm"), just = c("left", "top"))
+```
+Alteration Heatmp
+```{r, warning=FALSE}
+# Make data frame
+Sample.names <- colnames(alterations.grouped)
+# Study Mappings
+Samples <- c(TCGA.mae$sample_name, Taylor.mae$sample_name, Baca.mae$sample_name,
+            Barbieri.mae$sample_name, Hieronymus.mae$sample_name)
+Studies <- c(TCGA.mae$study_name, Taylor.mae$study_name, Baca.mae$study_name,
+             Barbieri.mae$study_name, Hieronymus.mae$study_name)
+Study.Mappings <- data.frame(Samples, Studies)
+Study <- c()
+for (i in 1:length(Sample.names)){
+  index <- match(Sample.names[i], Study.Mappings$Samples)
+  study <- Study.Mappings$Studies[index]
+  Study[i] <- study
+}
+# Combine clin path data into single data frame for heatmapping
+Groups = c(rep("Group 1", G1.count), rep("Group 2", G2.count),
+           rep("Group 3", G3.count), rep("Group 4", G4.count))
+clinpath.hm <- rbind(Study, Groups)
+colnames(clinpath.hm) <- Sample.names
+# Make list of heatmaps
+# Format top annotation bar
+ha = HeatmapAnnotation(
+  Groups = Groups,
+  col = list(Groups = c("Group 1" = "blue", "Group 2" = "red", "Group 3" = "green", "Group 4" = "orange")),
+  show_annotation_name = FALSE,
+  show_legend = FALSE,
+  border = FALSE,
+  gp = gpar(fontsize=20),
+  simple_anno_size = unit(.75, "cm"))
+# Studies
+studies <- t(as.data.frame(clinpath.hm[1,]))
+col.studies <- c("TCGA"="cyan2", "Taylor, et al."="tomato3", "Baca et al."="limegreen",
+                 "Barbieri et al." = "magenta2", "Hieronymus, et al." = "navy")
+lgd.studies <- Legend(labels = c("TCGA", "Taylor, et al.", "Baca et al.", "Barbieri et al.", "Hieronymus, et al."), 
+                      legend_gp = gpar(fill = c("cyan2", "tomato3", "limegreen", "magenta2", "navy")),
+                      direction = "horizontal", border = FALSE, title = "Study",                        
+                      title_gp = gpar(fontsize = 20), grid_height = unit(8, "mm"), 
+                      grid_width = unit(8, "mm"), labels_gp = gpar(fontsize = 20), ncol = 2, nrow = 3)
+hm.studies <- Heatmap(studies, name = "Study", cluster_columns = FALSE, show_column_names = FALSE, 
+                      height = unit(0.75, "cm"), col = col.studies, top_annotation = ha,
+                      border = FALSE, column_split = Groups,  show_row_names = FALSE,
+                      row_names_side = "left", show_heatmap_legend = FALSE,
+                      row_names_gp = gpar(fontsize=20))
+draw(hm.studies)
+# Alteration status
+rates.df <- matrix(nc=4, alteration.rates$`Alteration Rate`)
+total.df <- matrix(nc=4, group.alteration.df$`Ratio Total Alterations`)
+rownames(rates.df) <- rownames(alterations.grouped)
+rownames(total.df) <- rownames(alterations.grouped)
+ha.barplots = rowAnnotation(Alteration.Rate = anno_barplot(rates.df, beside = TRUE, attach = TRUE,
+                                                        gp = gpar(fill = c("blue", "red", "green", "orange"),
+                                                                  col = NA), width = unit(1.5, "cm")),
+                         Ratio.Alterations = anno_barplot(total.df,
+                                                          gp = gpar(fill = c("blue", "red", "green", "orange"),
+                                                                    col = NA), width = unit(1.5, "cm")))
+lgd.alteration = Legend(at = c(0,1), legend_gp = gpar(fill = c("gray", "firebrick2")), 
+                        title = "Alteration Status", border = FALSE, 
+                        title_gp = gpar(fontsize = 20), grid_height = unit(8, "mm"), 
+                        grid_width = unit(8, "mm"), labels_gp = gpar(fontsize = 20))
+hm.alteration <- Heatmap(alterations.grouped, show_row_names = TRUE, show_row_dend = TRUE, 
+                         show_column_dend = FALSE, show_column_names = FALSE, show_heatmap_legend = FALSE, 
+                         width = unit(18, "cm"), height = unit(14.5, "cm"), col = c("gray", "firebrick2"), 
+                         cluster_columns = FALSE, cluster_column_slices = FALSE, cluster_rows = TRUE, 
+                         cluster_row_slices = TRUE, border = FALSE, na_col = "ivory2", right_annotation = ha.barplots,
+                         row_names_gp = gpar(fontsize=20))
+ht_opt$ROW_ANNO_PADDING = unit(0.25, "cm")
+draw(hm.alteration)
+# Form list
+hm.list <- hm.studies %v% hm.alteration
+# Create legends
+legends <- packLegend(lgd.alteration, lgd.studies, column_gap = unit(1, "cm"),
+                      direction = "horizontal", max_width = unit(30, "cm"), max_height = unit(3, "cm"))
+# PDF
+pdf("Figure 2: Alteration Heatmap.pdf", height = 10, width = 12)
+draw(hm.list, ht_gap = unit(0.2, "cm"))
+draw(legends, x = unit(10, "cm"), y = unit(2, "cm"))
+dev.off()
+```
+## Survival
+Format data frames
+```{r}
+# TCGA
+PFS.data <- data.frame(TCGA.clinical@listData$sample_name, TCGA.clinical@listData$patient_id,
+                       TCGA.clinical@listData$days_to_disease_specific_recurrence/30,
+                       TCGA.clinical@listData$disease_specific_recurrence_status)
+colnames(PFS.data) <- c("Sample ID", "Patient ID", "Time", "Status")
+df1 <- PFS.data[match(intersect(Group1, PFS.data$`Sample ID`), PFS.data$`Sample ID`),]
+df1$Group <- "Group 1"
+df2 <- PFS.data[match(intersect(Group2, PFS.data$`Sample ID`), PFS.data$`Sample ID`),]
+df2$Group <- "Group 2"
+df3 <- PFS.data[match(intersect(Group3, PFS.data$`Sample ID`), PFS.data$`Sample ID`),]
+df3$Group <- "Group 3"
+df4 <- PFS.data[match(intersect(Group4, PFS.data$`Sample ID`), PFS.data$`Sample ID`),]
+df4$Group <- "Group 4"
+Combined.surv <- rbind(df1, df2)
+Combined.surv <- rbind(Combined.surv, df3)
+Combined.surv <- rbind(Combined.surv, df4)
+Combined.surv$Status <- as.numeric(Combined.surv$Status)
+# Taylor
+PFS.data.Taylor <- data.frame(Taylor.clinical@listData$sample_name, Taylor.clinical@listData$patient_id,
+                       Taylor.clinical@listData$days_to_disease_specific_recurrence/30,
+                       Taylor.clinical@listData$disease_specific_recurrence_status)
+colnames(PFS.data.Taylor) <- c("Sample ID", "Patient ID", "Time", "Status")
+df1 <- PFS.data.Taylor[match(intersect(Group1, PFS.data.Taylor$`Sample ID`), PFS.data.Taylor$`Sample ID`),]
+df1$Group <- "Group 1"
+df2 <- PFS.data.Taylor[match(intersect(Group2, PFS.data.Taylor$`Sample ID`), PFS.data.Taylor$`Sample ID`),]
+df2$Group <- "Group 2"
+df3 <- PFS.data.Taylor[match(intersect(Group3, PFS.data.Taylor$`Sample ID`), PFS.data.Taylor$`Sample ID`),]
+df3$Group <- "Group 3"
+df4 <- PFS.data.Taylor[match(intersect(Group4, PFS.data.Taylor$`Sample ID`), PFS.data.Taylor$`Sample ID`),]
+df4$Group <- "Group 4"
+Combined.surv.Taylor <- rbind(df1, df2)
+Combined.surv.Taylor <- rbind(Combined.surv.Taylor, df3)
+Combined.surv.Taylor <- rbind(Combined.surv.Taylor, df4)
+Combined.surv.Taylor$Status <- as.numeric(Combined.surv.Taylor$Status)
+# Hieronymus
+PFS.data.Hieronymus <- data.frame(Hieronymus.clinical@listData$sample_name, Hieronymus.clinical@listData$patient_id,
+                       Hieronymus.clinical@listData$days_to_overall_survival/30,
+                       Hieronymus.clinical@listData$overall_survival_status)
+colnames(PFS.data.Hieronymus) <- c("Sample ID", "Patient ID", "Time", "Status")
+df1 <- PFS.data.Hieronymus[match(intersect(Group1, PFS.data.Hieronymus$`Sample ID`), PFS.data.Hieronymus$`Sample ID`),]
+df1$Group <- "Group 1"
+df2 <- PFS.data.Hieronymus[match(intersect(Group2, PFS.data.Hieronymus$`Sample ID`), PFS.data.Hieronymus$`Sample ID`),]
+df2$Group <- "Group 2"
+df3 <- PFS.data.Hieronymus[match(intersect(Group3, PFS.data.Hieronymus$`Sample ID`), PFS.data.Hieronymus$`Sample ID`),]
+df3$Group <- "Group 3"
+Combined.surv.Hieronymus <- rbind(df1, df2)
+Combined.surv.Hieronymus <- rbind(Combined.surv.Hieronymus, df3)
+Combined.surv.Hieronymus$Status <- as.numeric(Combined.surv.Hieronymus$Status)
+```
+Generate survival objects and fits
+```{r}
+# TCGA
+Surv <- Surv(time = Combined.surv$Time, event = Combined.surv$Status)
+Fit <- surv_fit(Surv ~ Group, data = Combined.surv)
+# Taylor
+Surv.Taylor <- Surv(time = Combined.surv.Taylor$Time, event = Combined.surv.Taylor$Status)
+Fit.Taylor <- surv_fit(Surv.Taylor ~ Group, data = Combined.surv.Taylor)
+# Hieronymus
+Surv.Hieronymus <- Surv(time = Combined.surv.Hieronymus$Time, event = Combined.surv.Hieronymus$Status)
+Fit.Hieronymus <- surv_fit(Surv.Hieronymus ~ Group, data = Combined.surv.Hieronymus)
+```
+Plot survival curves
+```{r, echo = FALSE}
+# Taylor
+pdf("Figure 2: Survival.pdf", height = 8, width = 10, family = "Helvetica")
+print((ggsurvplot(Fit, pval = TRUE, log.rank.weights = "S1",
+                      risk.table = TRUE,
+                      palette = c("blue", "red", "green", "orange"),
+                      size = 0.5,
+                      risk.table.y.text = FALSE,
+                      ylab = "Progression-Free Survival",
+                      xlab = "Months",
+                      legend.title = "",
+                      legend.labs = c("A-Low", "CG-1", "CG-2", "A-High"),
+                      legend = c("top"),
+                      xlim = c(0,60),
+                      break.x.by = 12,
+                      break.y.by = 0.5,
+                      fontsize = 6,
+                      ggtheme = theme_survminer(font.y = c(22, "plain", "black"),
+                                                font.x =  c(22, "plain", "black"),
+                                                font.tickslab =  c(20, "plain", "black"),
+                                                font.legend =  c(20, "plain", "black"),
+                                                font.main =  c(22, "plain", "black")))))
+
+dev.off()
+# Taylor
+pdf("Figure 2 Supplement: Survival Taylor.pdf", height = 8, width = 10, family = "Helvetica")
+print((ggsurvplot(Fit.Taylor, pval = TRUE, log.rank.weights = "S1",
+                      risk.table = TRUE,
+                      palette = c("blue", "red", "green", "orange"),
+                      size = 0.5,
+                      risk.table.y.text = FALSE,
+                      ylab = "Progression-Free Survival",
+                      xlab = "Months",
+                      legend.title = "",
+                      legend.labs = c("A-Low", "CG-1", "CG-2", "A-High"),
+                      legend = c("top"),
+                      xlim = c(0,60),
+                      break.x.by = 12,
+                      break.y.by = 0.5,
+                      fontsize = 6,
+                      ggtheme = theme_survminer(font.y = c(22, "plain", "black"),
+                                                font.x =  c(22, "plain", "black"),
+                                                font.tickslab =  c(20, "plain", "black"),
+                                                font.legend =  c(20, "plain", "black"),
+                                                font.main =  c(22, "plain", "black")))))
+
+dev.off()
+# Taylor
+pdf("Figure 2 Supplement: Survival Hieronymus.pdf", height = 8, width = 10, family = "Helvetica")
+print((ggsurvplot(Fit.Hieronymus, pval = TRUE, log.rank.weights = "S1",
+                      risk.table = TRUE,
+                      palette = c("blue", "red", "green", "orange"),
+                      size = 0.5,
+                      risk.table.y.text = FALSE,
+                      ylab = "Overall Survival",
+                      xlab = "Months",
+                      legend.title = "",
+                      legend.labs = c("A-Low", "CG-1", "CG-2"),
+                      legend = c("top"),
+                      xlim = c(0,60),
+                      break.x.by = 12,
+                      break.y.by = 0.5,
+                      fontsize = 6,
+                      ggtheme = theme_survminer(font.y = c(22, "plain", "black"),
+                                                font.x =  c(22, "plain", "black"),
+                                                font.tickslab =  c(20, "plain", "black"),
+                                                font.legend =  c(20, "plain", "black"),
+                                                font.main =  c(22, "plain", "black")))))
+
+dev.off()
+```
+Compute survival curve stats
+```{r}
+# TCGA
+coxfit.TCGA <- coxph(
+  Surv(Time, Status) ~ Group,
+  data = Combined.surv,
+  ties = 'exact')
+summary(coxfit.TCGA)
+# Taylor
+coxfit.Taylor <- coxph(
+  Surv(Time, Status) ~ Group,
+  data = Combined.surv.Taylor,
+  ties = 'exact')
+summary(coxfit.Taylor)
+# Hieronymus
+coxfit.Hieronymus <- coxph(
+  Surv(Time, Status) ~ Group,
+  data = Combined.surv.Hieronymus,
+  ties = 'exact')
+summary(coxfit.Hieronymus)
+```
+## Gleason Score
+```{r}
+Group.mappings <- data.frame(colnames(clinpath.hm), clinpath.hm[2,])
+colnames(Group.mappings) <- c("Sample", "Group")
+Gleason.Mappings <- data.frame(Samples, c(TCGA.mae$grade_group, Taylor.mae$grade_group,
+                                          Baca.mae$grade_group, Barbieri.mae$grade_group,
+                                          Hieronymus.mae$grade_group))
+colnames(Gleason.Mappings)[2] <- "Gleason Grade"
+index <- match(Gleason.Mappings$Samples, Group.mappings$Sample)
+Gleason.Mappings$"Group" <- Group.mappings$Group[index]
+Gleason.Mappings <- na.omit(Gleason.Mappings)
+G1.scores <- Gleason.Mappings[Gleason.Mappings$Group=="Group 1",]
+G1.counts <- G1.scores %>% dplyr::count(`Gleason Grade`)
+G1.counts$Group <- "A-Low"
+G2.scores <- Gleason.Mappings[Gleason.Mappings$Group=="Group 2",]
+G2.counts <- G2.scores %>% dplyr::count(`Gleason Grade`)
+G2.counts$Group <- "CG-1"
+G3.scores <- Gleason.Mappings[Gleason.Mappings$Group=="Group 3",]
+G3.counts <- G3.scores %>% dplyr::count(`Gleason Grade`)
+G3.counts$Group <- "CG-2"
+G4.scores <- Gleason.Mappings[Gleason.Mappings$Group=="Group 4",]
+G4.counts <- G4.scores %>% dplyr::count(`Gleason Grade`)
+G4.counts$Group <- "A-High"
+Gleason.df <- rbind(G1.counts, G2.counts)
+Gleason.df <- rbind(Gleason.df, G3.counts)
+Gleason.df <- rbind(Gleason.df, G4.counts)
+colnames(Gleason.df)[2] <- "Ratio Tumors"
+Gleason.df$Group <- factor(Gleason.df$Group, levels = c("A-Low", "CG-1", "CG-2", "A-High"))
+Gleason.df$`Gleason Grade` <- factor(Gleason.df$`Gleason Grade`, levels = c(">=8", "4+3", "3+4", "<=6"))
+# Compute Enrichment Stats
+G1.gleason.enrichment <- c(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` == ">=8" &
+                                                            Gleason.df$Group == "A-Low"],
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` != ">=8" &
+                                                            Gleason.df$Group == "A-Low"]),
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` == ">=8" &
+                                                            Gleason.df$Group != "A-Low"]),
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` != ">=8" &
+                                                            Gleason.df$Group != "A-Low"]))
+G1.gleason.enrichment <- matrix(G1.gleason.enrichment, 2, 2)
+colnames(G1.gleason.enrichment) <- c("A-Low Tumors", "All Other Tumors")
+rownames(G1.gleason.enrichment) <- c("Grade >= 8", "Grade < 8")
+G1.fisher <- fisher.test(G1.gleason.enrichment)
+G2.gleason.enrichment <- c(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` == ">=8" &
+                                                            Gleason.df$Group == "CG-1"],
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` != ">=8" &
+                                                            Gleason.df$Group == "CG-1"]),
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` == ">=8" &
+                                                            Gleason.df$Group != "CG-1"]),
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` != ">=8" &
+                                                            Gleason.df$Group != "CG-1"]))
+G2.gleason.enrichment <- matrix(G2.gleason.enrichment, 2, 2)
+colnames(G2.gleason.enrichment) <- c("CG-1 Tumors", "All Other Tumors")
+rownames(G2.gleason.enrichment) <- c("Grade >= 8", "Grade < 8")
+G2.fisher <- fisher.test(G2.gleason.enrichment)
+G3.gleason.enrichment <- c(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` == ">=8" &
+                                                            Gleason.df$Group == "CG-2"],
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` != ">=8" &
+                                                            Gleason.df$Group == "CG-2"]),
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` == ">=8" &
+                                                            Gleason.df$Group != "CG-2"]),
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` != ">=8" &
+                                                            Gleason.df$Group != "CG-2"]))
+G3.gleason.enrichment <- matrix(G3.gleason.enrichment, 2, 2)
+colnames(G3.gleason.enrichment) <- c("CG-2 Tumors", "All Other Tumors")
+rownames(G3.gleason.enrichment) <- c("Grade >= 8", "Grade < 8")
+G3.fisher <- fisher.test(G3.gleason.enrichment)
+G4.gleason.enrichment <- c(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` == ">=8" &
+                                                            Gleason.df$Group == "A-High"],
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` != ">=8" &
+                                                            Gleason.df$Group == "A-High"]),
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` == ">=8" &
+                                                            Gleason.df$Group != "A-High"]),
+                              sum(Gleason.df$`Ratio Tumors`[Gleason.df$`Gleason Grade` != ">=8" &
+                                                            Gleason.df$Group != "A-High"]))
+G4.gleason.enrichment <- matrix(G4.gleason.enrichment, 2, 2)
+colnames(G4.gleason.enrichment) <- c("A-High Tumors", "All Other Tumors")
+rownames(G4.gleason.enrichment) <- c("Grade >= 8", "Grade < 8")
+G4.fisher <- fisher.test(G4.gleason.enrichment)
+Gleason.FDRs <- p.adjust(c(G1.fisher$p.value, G2.fisher$p.value, G3.fisher$p.value, G4.fisher$p.value), 
+                         method = "fdr")
+Gleason.stats <- data.frame(rep("Ratio Tumors", 4),
+                            c("A-Low", "CG-1", "CG-2", "A-High"),
+                            c("A-Low", "CG-1", "CG-2", "A-High"),
+                            rep(1, 4),
+                            c("****", "ns", "ns", "****"),
+                            rep(1.05, 4))
+colnames(Gleason.stats) <- c(".y.", "group1", "group2", "p", "p.signif", "y.position")
+# Plot
+pdf("Figure 2: Gleason Scores.pdf", height = 7, width = 7)
+(ggplot(Gleason.df) + geom_col(aes(`Group`, `Ratio Tumors`, fill = `Gleason Grade`), position = "fill") +
+    theme_classic() + scale_fill_brewer(palette = "RdBu", direction = 1) +
+                                    theme(axis.text.y.left = element_text(size=20), 
+                                        axis.text.x.bottom = element_text(size=20),
+                                        axis.line = element_line(size = 1),
+                                        title = element_text(size=20), 
+                                        legend.text = element_text(size=20)) +
+    stat_pvalue_manual(Gleason.stats, label = "p.signif", tip.length = 0, size = 7))
+dev.off()
+```
+## T Stage
+```{r}
+T.Mappings <- data.frame(Samples, c(TCGA.mae$T_clinical, Taylor.mae$T_clinical,
+                                          Baca.mae$T_clinical, Barbieri.mae$T_clinical,
+                                          Hieronymus.mae$T_clinical))
+colnames(T.Mappings)[2] <- "T Stage"
+index <- match(T.Mappings$Samples, Group.mappings$Sample)
+T.Mappings$"Group" <- Group.mappings$Group[index]
+T.Mappings <- na.omit(T.Mappings)
+G1.scores <- T.Mappings[T.Mappings$Group=="Group 1",]
+G1.counts <- G1.scores %>% dplyr::count(`T Stage`)
+G1.counts$Group <- "A-Low"
+G2.scores <- T.Mappings[T.Mappings$Group=="Group 2",]
+G2.counts <- G2.scores %>% dplyr::count(`T Stage`)
+G2.counts$Group <- "CG-1"
+G3.scores <- T.Mappings[T.Mappings$Group=="Group 3",]
+G3.counts <- G3.scores %>% dplyr::count(`T Stage`)
+G3.counts$Group <- "CG-2"
+G4.scores <- T.Mappings[T.Mappings$Group=="Group 4",]
+G4.counts <- G4.scores %>% dplyr::count(`T Stage`)
+G4.counts$Group <- "A-High"
+T.df <- rbind(G1.counts, G2.counts)
+T.df <- rbind(T.df, G3.counts)
+T.df <- na.omit(rbind(T.df, G4.counts))
+colnames(T.df)[2] <- "Ratio Tumors"
+T.df$Group <- factor(T.df$Group, levels = c("A-Low", "CG-1", "CG-2", "A-High"))
+T.df$`T Stage` <- factor(T.df$`T Stage`, levels = c("4", "3", "2", "1"))
+# Compute T stage enrichment stats
+G1.T.enrichment <- c(sum(T.df$`Ratio Tumors`[T.df$`T Stage` == 1 & T.df$Group == "A-Low"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` != 1 & T.df$Group == "A-Low"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` == 1 & T.df$Group != "A-Low"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` != 1 & T.df$Group != "A-Low"]))
+G1.T.enrichment <- matrix(G1.T.enrichment, 2, 2)
+colnames(G1.T.enrichment) <- c("A-Low", "All Other")
+rownames(G1.T.enrichment) <- c("T1 Count", "T2+ Count")
+G1.T.fisher <- fisher.test(G1.T.enrichment)
+G2.T.enrichment <- c(sum(T.df$`Ratio Tumors`[T.df$`T Stage` == 1 & T.df$Group == "CG-1"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` != 1 & T.df$Group == "CG-1"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` == 1 & T.df$Group != "CG-1"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` != 1 & T.df$Group != "CG-1"]))
+G2.T.enrichment <- matrix(G2.T.enrichment, 2, 2)
+colnames(G2.T.enrichment) <- c("CG-1", "All Other")
+rownames(G2.T.enrichment) <- c("T1 Count", "T2+ Count")
+G2.T.fisher <- fisher.test(G2.T.enrichment)
+G3.T.enrichment <- c(sum(T.df$`Ratio Tumors`[T.df$`T Stage` == 1 & T.df$Group == "CG-2"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` != 1 & T.df$Group == "CG-2"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` == 1 & T.df$Group != "CG-2"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` != 1 & T.df$Group != "CG-2"]))
+G3.T.enrichment <- matrix(G3.T.enrichment, 2, 2)
+colnames(G3.T.enrichment) <- c("CG-2", "All Other")
+rownames(G3.T.enrichment) <- c("T1 Count", "T2+ Count")
+G3.T.fisher <- fisher.test(G3.T.enrichment)
+G4.T.enrichment <- c(sum(T.df$`Ratio Tumors`[T.df$`T Stage` == 1 & T.df$Group == "A-High"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` != 1 & T.df$Group == "A-High"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` == 1 & T.df$Group != "A-High"]),
+                     sum(T.df$`Ratio Tumors`[T.df$`T Stage` != 1 & T.df$Group != "A-High"]))
+G4.T.enrichment <- matrix(G4.T.enrichment, 2, 2)
+colnames(G4.T.enrichment) <- c("A-High", "All Other")
+rownames(G4.T.enrichment) <- c("T1 Count", "T2+ Count")
+G4.T.fisher <- fisher.test(G4.T.enrichment)
+T.Stage.FDRs <- p.adjust(c(G1.T.fisher$p.value, G2.T.fisher$p.value, G3.T.fisher$p.value, G4.T.fisher$p.value), 
+                         method = "fdr")
+T.Stage.stats <- data.frame(rep("Ratio Tumors", 4),
+                            c("A-Low", "CG-1", "CG-2", "A-High"),
+                            c("A-Low", "CG-1", "CG-2", "A-High"),
+                            rep(1, 4),
+                            c("ns", "***", "ns", "****"),
+                            rep(1.05, 4))
+colnames(T.Stage.stats) <- c(".y.", "group1", "group2", "p", "p.signif", "y.position")
+pdf("Figure 2: Tumor Stages.pdf", height = 7, width = 7)
+(ggplot(T.df) + geom_col(aes(`Group`, `Ratio Tumors`, fill = `T Stage`), position = "fill") +
+    theme_classic() + scale_fill_manual(values = c("purple3", "red3", "green3", "blue3")) +
+                                    theme(axis.text.y.left = element_text(size=20), 
+                                        axis.text.x.bottom = element_text(size=20),
+                                        axis.line = element_line(size = 1),
+                                        title = element_text(size=20), 
+                                        legend.text = element_text(size=20)) +
+        stat_pvalue_manual(T.Stage.stats, label = "p.signif", tip.length = 0, size = 7))
+dev.off()
+```
+
+
+
+## N Stage
+```{r}
+N.Mappings <- data.frame(Samples, c(TCGA.mae$N_stage, Taylor.mae$N_stage,
+                                          Baca.mae$N_stage, Barbieri.mae$N_stage,
+                                          Hieronymus.mae$N_stage))
+colnames(N.Mappings)[2] <- "N Stage"
+index <- match(N.Mappings$Samples, Group.mappings$Sample)
+N.Mappings$"Group" <- Group.mappings$Group[index]
+N.Mappings <- na.omit(N.Mappings)
+G1.scores <- N.Mappings[N.Mappings$Group=="Group 1",]
+G1.counts <- G1.scores %>% dplyr::count(`N Stage`)
+G1.counts$Group <- "A-Low"
+G2.scores <- N.Mappings[N.Mappings$Group=="Group 2",]
+G2.counts <- G2.scores %>% dplyr::count(`N Stage`)
+G2.counts$Group <- "CG-1"
+G3.scores <- N.Mappings[N.Mappings$Group=="Group 3",]
+G3.counts <- G3.scores %>% dplyr::count(`N Stage`)
+G3.counts$Group <- "CG-2"
+G4.scores <- N.Mappings[N.Mappings$Group=="Group 4",]
+G4.counts <- G4.scores %>% dplyr::count(`N Stage`)
+G4.counts$Group <- "A-High"
+N.df <- rbind(G1.counts, G2.counts)
+N.df <- rbind(N.df, G3.counts)
+N.df <- na.omit(rbind(N.df, G4.counts))
+colnames(N.df)[2] <- "Ratio Tumors"
+N.df$Group <- factor(N.df$Group, levels = c("A-Low", "CG-1", "CG-2", "A-High"))
+N.df$`N Stage` <- factor(N.df$`N Stage`, levels = c("1", "0"))
+# Compute N stage enrichment stats
+G1.N.enrichment <- c(sum(N.df$`Ratio Tumors`[N.df$`N Stage` == 1 & N.df$Group == "A-Low"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` != 1 & N.df$Group == "A-Low"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` == 1 & N.df$Group != "A-Low"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` != 1 & N.df$Group != "A-Low"]))
+G1.N.enrichment <- matrix(G1.N.enrichment, 2, 2)
+colnames(G1.N.enrichment) <- c("A-Low", "All Other")
+rownames(G1.N.enrichment) <- c("N1 Count", "N0 Count")
+G1.N.fisher <- fisher.test(G1.N.enrichment)
+G2.N.enrichment <- c(sum(N.df$`Ratio Tumors`[N.df$`N Stage` == 1 & N.df$Group == "CG-1"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` != 1 & N.df$Group == "CG-1"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` == 1 & N.df$Group != "CG-1"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` != 1 & N.df$Group != "CG-1"]))
+G2.N.enrichment <- matrix(G2.N.enrichment, 2, 2)
+colnames(G2.N.enrichment) <- c("CG-1", "All Other")
+rownames(G2.N.enrichment) <- c("N1 Count", "N0 Count")
+G2.N.fisher <- fisher.test(G2.N.enrichment)
+G3.N.enrichment <- c(sum(N.df$`Ratio Tumors`[N.df$`N Stage` == 1 & N.df$Group == "CG-2"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` != 1 & N.df$Group == "CG-2"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` == 1 & N.df$Group != "CG-2"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` != 1 & N.df$Group != "CG-2"]))
+G3.N.enrichment <- matrix(G3.N.enrichment, 2, 2)
+colnames(G3.N.enrichment) <- c("CG-2", "All Other")
+rownames(G3.N.enrichment) <- c("N1 Count", "N0 Count")
+G3.N.fisher <- fisher.test(G3.N.enrichment)
+G4.N.enrichment <- c(sum(N.df$`Ratio Tumors`[N.df$`N Stage` == 1 & N.df$Group == "A-High"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` != 1 & N.df$Group == "A-High"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` == 1 & N.df$Group != "A-High"]),
+                     sum(N.df$`Ratio Tumors`[N.df$`N Stage` != 1 & N.df$Group != "A-High"]))
+G4.N.enrichment <- matrix(G4.N.enrichment, 2, 2)
+colnames(G4.N.enrichment) <- c("A-High", "All Other")
+rownames(G4.N.enrichment) <- c("N1 Count", "N0 Count")
+G4.N.fisher <- fisher.test(G4.N.enrichment)
+N.Stage.FDRs <- p.adjust(c(G1.N.fisher$p.value, G2.N.fisher$p.value, G3.N.fisher$p.value, G4.N.fisher$p.value), 
+                         method = "fdr")
+N.Stage.stats <- data.frame(rep("Ratio Tumors", 4),
+                            c("A-Low", "CG-1", "CG-2", "A-High"),
+                            c("A-Low", "CG-1", "CG-2", "A-High"),
+                            rep(1, 4),
+                            c("ns", "ns", "ns", "***"),
+                            rep(1.05, 4))
+colnames(N.Stage.stats) <- c(".y.", "group1", "group2", "p", "p.signif", "y.position")
+pdf("Figure 2 Supplement: N Stages.pdf", height = 6, width = 8)
+(ggplot(N.df) + geom_col(aes(`Group`, `Ratio Tumors`, fill = `N Stage`), position = "fill") +
+    theme_classic() + scale_fill_brewer(palette = "Dark2", direction = -1) +
+                                    theme(axis.text.y.left = element_text(size=20), 
+                                        axis.text.x.bottom = element_text(size=20),
+                                        axis.line = element_line(size = 1),
+                                        title = element_text(size=20), 
+                                        legend.text = element_text(size=20)) +
+            stat_pvalue_manual(N.Stage.stats, label = "p.signif", tip.length = 0, size = 7))
+
+dev.off()
+```
+## Age
+```{r}
+Age.Mappings <- data.frame(Samples, c(TCGA.mae$age_at_initial_diagnosis, Taylor.mae$age_at_initial_diagnosis,
+                                          Baca.mae$age_at_initial_diagnosis, Barbieri.mae$age_at_initial_diagnosis,
+                                          Hieronymus.mae$age_at_initial_diagnosis))
+colnames(Age.Mappings)[2] <- "Age"
+index <- match(Age.Mappings$Samples, Group.mappings$Sample)
+Age.Mappings$"Group" <- Group.mappings$Group[index]
+Age.Mappings <- na.omit(Age.Mappings)
+G1.scores <- Age.Mappings[Age.Mappings$Group=="Group 1",]
+G1.scores$Group <- "A-Low"
+G2.scores <- Age.Mappings[Age.Mappings$Group=="Group 2",]
+G2.scores$Group <- "CG-1"
+G3.scores <- Age.Mappings[Age.Mappings$Group=="Group 3",]
+G3.scores$Group <- "CG-2"
+G4.scores <- Age.Mappings[Age.Mappings$Group=="Group 4",]
+G4.scores$Group <- "A-High"
+Age.df <- rbind(G1.scores, G2.scores)
+Age.df <- rbind(Age.df, G3.scores)
+Age.df <- na.omit(rbind(Age.df, G4.scores))
+Age.df$Group <- factor(Age.df$Group, levels = c("A-Low", "CG-1", "CG-2", "A-High"))
+Age.anova <- compare_means(Age~Group, data = Age.df, method = "anova")
+Age.t.test <- compare_means(Age~Group, data = Age.df, method = "t.test")
+Age.t.test <- Age.t.test %>% mutate(y.position = seq(90,115,5))
+pdf("Figure 2 Supplement: Age.pdf", height = 6, width = 8)
+(ggplot(Age.df) + geom_boxplot(aes(`Group`, `Age`, fill = `Group`)) + theme_classic() + geom_jitter(aes(`Group`, `Age`)) + scale_fill_manual(values = c("blue", "red", "green", "orange")) + ylim(40,120) +
+    theme(axis.text.y.left = element_text(size=20), 
+                                        axis.text.x.bottom = element_text(size=20),
+                                        axis.line = element_line(size = 1),
+                                        title = element_text(size=20), legend.position = "none") +
+    stat_compare_means(mapping = aes(`Group`, `Age`), method = "anova", size = 7) +
+    stat_pvalue_manual(Age.t.test, label = "p.signif"))
+
+dev.off()
+```
+## PSA
+```{r}
+PSA.Mappings <- data.frame(Samples, c(TCGA.mae$psa, Taylor.mae$psa,
+                                          Baca.mae$psa, Barbieri.mae$psa,
+                                          Hieronymus.mae$psa))
+colnames(PSA.Mappings)[2] <- "PSA"
+index <- match(PSA.Mappings$Samples, Group.mappings$Sample)
+PSA.Mappings$"Group" <- Group.mappings$Group[index]
+PSA.Mappings <- na.omit(PSA.Mappings)
+G1.scores <- PSA.Mappings[PSA.Mappings$Group=="Group 1",]
+G1.scores$Group <- "A-Low"
+G2.scores <- PSA.Mappings[PSA.Mappings$Group=="Group 2",]
+G2.scores$Group <- "CG-1"
+G3.scores <- PSA.Mappings[PSA.Mappings$Group=="Group 3",]
+G3.scores$Group <- "CG-2"
+G4.scores <- PSA.Mappings[PSA.Mappings$Group=="Group 4",]
+G4.scores$Group <- "A-High"
+PSA.df <- rbind(G1.scores, G2.scores)
+PSA.df <- rbind(PSA.df, G3.scores)
+PSA.df <- na.omit(rbind(PSA.df, G4.scores))
+PSA.df$Group <- factor(PSA.df$Group, levels = c("A-Low", "CG-1", "CG-2", "A-High"))
+PSA.comparisons <- compare_means(PSA~Group, data = PSA.df, method = "t.test")
+pdf("Figure 2 Supplement: PSA.pdf", height = 6, width = 8)
+(ggplot(PSA.df) + geom_boxplot(aes(`Group`, `PSA`, fill = `Group`)) + theme_classic() + geom_jitter(aes(`Group`, `PSA`)) + scale_fill_manual(values = c("blue", "red", "green", "orange")) + ylim(0,50) +
+    theme(axis.text.y.left = element_text(size=20), 
+                                        axis.text.x.bottom = element_text(size=20),
+                                        axis.line = element_line(size = 1),
+                                        title = element_text(size=20), 
+                                        legend.text = element_text(size=20),
+          legend.position = "none") + 
+    stat_compare_means(mapping = aes(`Group`, `PSA`), method = "anova", size = 7))
+dev.off()
+```
+## Genomic Instability
+```{r}
+CNAs <- combined.alterations <- read.table("primary alteration.txt", sep = "\t", check.names = FALSE, header = TRUE)
+index <- na.omit(match(colnames(alterations.grouped), colnames(CNAs)))
+CNAs.grouped <- CNAs[,index]
+CNAs.df <- data.frame()
+for (i in 1:ncol(CNAs.grouped)){
+  CNAs.df[i,1] <- colnames(CNAs.grouped)[i]
+  CNAs.df[i,2] <- sum(CNAs.grouped[,i])
+}
+index <- match(CNAs.df$V1, Group.mappings$Sample)
+CNAs.df$Group <- Group.mappings$Group[index]
+CNAs.df$Group[CNAs.df$Group=="Group 1"] <- "A-Low"
+CNAs.df$Group[CNAs.df$Group=="Group 2"] <- "CG-1"
+CNAs.df$Group[CNAs.df$Group=="Group 3"] <- "CG-2"
+CNAs.df$Group[CNAs.df$Group=="Group 4"] <- "A-High"
+CNAs.df$Group <- factor(CNAs.df$Group, levels = c("A-Low", "CG-1", "CG-2", "A-High"))
+colnames(CNAs.df)[c(1,2)] <- c("Sample", "Alterations")
+CNA.t.test <- compare_means(Alterations ~ Group, data = CNAs.df, method = "t.test")
+CNA.t.test <- CNA.t.test %>% mutate(y.position = seq(12000,16500,800))
+pdf("Figure 2 Supplement: Genomic Instability.pdf", height = 6, width = 8)
+ggplot(CNAs.df) + geom_boxplot(aes(`Group`, `Alterations`, fill = `Group`)) + theme_classic() + geom_jitter(aes(`Group`, `Alterations`)) + scale_fill_manual(values = c("blue", "red", "green", "orange")) +
+    theme(axis.text.y.left = element_text(size=20),
+                                        axis.text.x.bottom = element_text(size=20),
+                                        axis.line = element_line(size = 1),
+                                        title = element_text(size=20), 
+                                        legend.position = "none") +
+            stat_compare_means(mapping = aes(`Group`, `Alterations`), method = "anova", size = 7) +
+  stat_pvalue_manual(CNA.t.test, label = "p.signif") + ylim(0,17000)
+dev.off()
+```

@@ -1,6 +1,0 @@
-library(shiny)
-source("server.R")
-source("ui.R",local = TRUE)
-#options(shiny.host = '0.0.0.0')
-#options(shiny.port = 8888)
-shinyApp(ui = ui, server = server)
