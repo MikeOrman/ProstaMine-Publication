@@ -3,7 +3,7 @@
 **ProstaMine** is a bioinformatics tool for identifying **subtype-specific co-alterations** associated with aggressiveness in prostate cancer.  
 It integrates **genomic, transcriptomic, and clinical** data from multiple prostate cancer cohorts to prioritize gene co-alterations enriched in metastatic disease and associated with disease progression.
 
-🧬 **Web app:** [https://bioinformatics.cuanschutz.edu/prostamine](https://bioinformatics.cuanschutz.edu/prostamine)  
+🧬 **Web app:** [https://bioinformatics.cuanschutz.edu/prostamine](https://bioinformatics.cuanschutz.edu/prostamine)
 📄 **Publication:** [Frontiers in Pharmacology (2024)](https://doi.org/10.3389/fphar.2024.1360352)
 
 ---
@@ -52,20 +52,20 @@ Adjust filtering parameters in the sidebar to control stringency.
 
 ## 📊 Output and Visualization
 
-### 🧬 1. Genomic Analysis
+### 1. Genomic Analysis
 - Displays significant co-alterations enriched in the selected subtype  
 - Presented as alteration heatmaps and frequency plots  
 
-### 🧠 2. Transcriptomic Analysis
+### 2. Transcriptomic Analysis
 - Highlights genes with concordant differential expression in primary and metastatic tumors  
 - Fold change and FDR values are reported  
 
-### 🩸 3. Clinical Association
+### 3. Clinical Association
 - Kaplan–Meier progression-free survival curves  
 - Gleason grade enrichment tests  
 - Identifies alterations linked to poor prognosis  
 
-### 🧮 4. Ranked Co-alteration Table
+### 4. Ranked Co-alteration Table
 
 All results are ranked using the **ProstaMine Score**:
 
