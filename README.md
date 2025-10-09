@@ -3,14 +3,14 @@
 **ProstaMine** is a bioinformatics tool for identifying **subtype-specific co-alterations** associated with aggressiveness in prostate cancer.  
 It integrates **genomic, transcriptomic, and clinical** data from multiple prostate cancer cohorts to prioritize gene co-alterations enriched in metastatic disease and associated with disease progression.
 
-🧬 **Web app:** [https://bioinformatics.cuanschutz.edu/prostamine](https://bioinformatics.cuanschutz.edu/prostamine)
+**Web app:** [https://bioinformatics.cuanschutz.edu/prostamine](https://bioinformatics.cuanschutz.edu/prostamine)
 
 
-📄 **Publication:** [Frontiers in Pharmacology (2024)](https://doi.org/10.3389/fphar.2024.1360352)
+**Publication:** [Frontiers in Pharmacology (2024)](https://doi.org/10.3389/fphar.2024.1360352)
 
 ---
 
-## 🚀 Overview
+## Overview
 
 ProstaMine systematically mines prostate cancer data to:
 
@@ -27,7 +27,7 @@ You can run ProstaMine directly in your browser at the link above
 
 ## ⚙️ Using the App
 
-### 🧩 Step 1 – Select a Molecular Subtype
+### Step 1 – Select a Molecular Subtype
 
 Choose a genomic alteration to define your prostate cancer molecular subtype  
 (e.g., **NKX3-1 loss**, **RB1 loss**, **PTEN loss**).  
@@ -39,7 +39,7 @@ ProstaMine automatically groups tumors into:
 
 ---
 
-### 🧠 Step 2 – Set Analysis Parameters
+### Step 2 – Set Analysis Parameters
 
 Adjust filtering parameters in the sidebar to control stringency.
 
@@ -52,7 +52,7 @@ Adjust filtering parameters in the sidebar to control stringency.
 
 ---
 
-## 📊 Output and Visualization
+## Output and Visualization
 
 ### 1. Genomic Analysis
 - Displays significant co-alterations enriched in the selected subtype  
@@ -79,7 +79,7 @@ ProstaMine Score = 0.3 × (Primary ΔFreq Rank)
 
 Higher ProstaMine scores indicate stronger association with aggressive disease.
 
-## 💾 Exporting Results
+## Exporting Results
 
 Each results tab includes download options for:
 
@@ -89,7 +89,7 @@ Each results tab includes download options for:
 
 ---
 
-## 📚 Data Sources
+## Data Sources
 
 ProstaMine leverages harmonized multi-omic data via the  
 [`curatedPCaData`](https://github.com/FIMM-CURATED/curatedPCaData) R package  
@@ -104,7 +104,7 @@ ProstaMine leverages harmonized multi-omic data via the
 
 ---
 
-## 🧠 Citation
+## Citation
 
 If you use **ProstaMine**, please cite:
 
